@@ -1,0 +1,9 @@
+# H&M competition data must be obtained from Kaggle by each user.
+/data/raw/
+/data/processed/
+/data/h-and-m-personalized-fashion-recommendations/
+
+# Local notebook and Python artifacts.
+.ipynb_checkpoints/
+__pycache__/
+*.py[cod]
