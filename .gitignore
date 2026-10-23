@@ -2,8 +2,13 @@
 /data/raw/
 /data/processed/
 /data/h-and-m-personalized-fashion-recommendations/
+/outputs/figures/*
+!/outputs/figures/.gitkeep
 
 # Local notebook and Python artifacts.
+.venv/
+.uv-cache/
 .ipynb_checkpoints/
 __pycache__/
 *.py[cod]
+.DS_Store
