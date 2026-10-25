@@ -1,4 +1,4 @@
-"""H&M 원본을 보존하며 표본, 이미지 피처, RFM을 계산한다."""
+"""H&M 원본을 보존하며 표본, 이미지 피처, RFM과 고객 세그먼트를 계산한다."""
 
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ class DataAnalyzer:
         self.image_features: pd.DataFrame | None = None
         self.image_arrays: np.ndarray | None = None
         self.rfm: pd.DataFrame | None = None
+        self.customer_segments: pd.DataFrame | None = None
         self.reference_date: pd.Timestamp | None = None
         self.quality_report: dict[str, object] = {}
 
@@ -395,4 +396,50 @@ class DataAnalyzer:
             "customer_id", "recency_days", "frequency_days", "monetary",
             "transaction_rows", "last_purchase", "reference_date",
         ]]
+        self.customer_segments = None
         return self.rfm.copy(deep=True)
+
+    # RFM의 세 지표를 1~5점으로 바꾸고, 우선순위가 있는 규칙으로 고객을 한 그룹에 배정한다.
+    def segment_customers(self) -> pd.DataFrame:
+        """구매 고객의 RFM 점수와 상호 배타적인 행동 세그먼트를 반환한다."""
+        if self.rfm is None:
+            raise RuntimeError("고객 세분화 전에 load_data() 또는 calculate_rfm()을 실행하세요.")
+        required = {"customer_id", "recency_days", "frequency_days", "monetary"}
+        missing = required - set(self.rfm.columns)
+        if missing or self.rfm.empty or self.rfm["customer_id"].isna().any():
+            raise ValueError(f"RFM 표가 비었거나 필요한 값이 없습니다: {sorted(missing)}")
+        if self.rfm["customer_id"].duplicated().any():
+            raise ValueError("RFM 표의 customer_id에 중복이 있습니다.")
+
+        result = self.rfm.copy(deep=True)
+        for column in ("recency_days", "frequency_days", "monetary"):
+            values = pd.to_numeric(result[column], errors="coerce")
+            if values.isna().any() or not np.isfinite(values.to_numpy(dtype=float)).all() or values.le(0).any():
+                raise ValueError(f"RFM의 {column}에는 유한한 양수만 있어야 합니다.")
+            result[column] = values
+
+        # 분위수 경계에 같은 값이 몰려도 동점 고객은 같은 점수를 받도록 평균 순위를 쓴다.
+        # 작은 R이 더 최근이므로 R만 방향을 뒤집고, F와 M은 클수록 높은 점수를 준다.
+        for column, score_column, reverse in (
+            ("recency_days", "r_score", True),
+            ("frequency_days", "f_score", False),
+            ("monetary", "m_score", False),
+        ):
+            percentile_rank = result[column].rank(method="average", pct=True)
+            score = np.ceil(percentile_rank * 5).astype(int).clip(1, 5)
+            result[score_column] = 6 - score if reverse else score
+
+        # 앞의 조건이 우선이다. 나머지는 Other로 보내 모든 구매 고객을 정확히 한 번 분류한다.
+        result["segment"] = np.select(
+            [
+                (result["r_score"] >= 4) & (result["f_score"] >= 4) & (result["m_score"] >= 4),
+                (result["r_score"] >= 3) & (result["f_score"] >= 4),
+                (result["r_score"] >= 4) & (result["f_score"] <= 2),
+                (result["r_score"] <= 2) & (result["f_score"] >= 3),
+                (result["r_score"] <= 2) & (result["f_score"] <= 2),
+            ],
+            ["VIP", "Loyal", "Recent", "At risk", "Dormant"],
+            default="Other",
+        )
+        self.customer_segments = result
+        return result.copy(deep=True)

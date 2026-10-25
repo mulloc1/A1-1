@@ -148,6 +148,31 @@ class PipelineTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "기준일"):
             analyzer.calculate_rfm(reference_date="2020-09-22")
 
+    def test_rfm_scores_preserve_ties_and_cover_every_customer(self) -> None:
+        analyzer = self.analyzer()
+        analyzer.rfm = pd.DataFrame({
+            "customer_id": [f"c{i}" for i in range(10)],
+            "recency_days": [1, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            "frequency_days": [1, 1, 1, 2, 2, 3, 4, 5, 6, 7],
+            "monetary": [0.1 * (i + 1) for i in range(10)],
+        })
+        result = analyzer.segment_customers()
+        self.assertEqual(len(result), 10)
+        self.assertEqual(result["customer_id"].nunique(), 10)
+        self.assertFalse(result["segment"].isna().any())
+        for column in ("r_score", "f_score", "m_score"):
+            self.assertTrue(result[column].between(1, 5).all())
+        self.assertEqual(result.loc[0, "r_score"], result.loc[1, "r_score"])
+        self.assertEqual(result.loc[0, "f_score"], result.loc[2, "f_score"])
+        self.assertGreater(result.loc[0, "r_score"], result.loc[9, "r_score"])
+        self.assertLess(result.loc[0, "m_score"], result.loc[9, "m_score"])
+        result.loc[0, "segment"] = "changed"
+        self.assertNotEqual(analyzer.customer_segments.loc[0, "segment"], "changed")
+        self.assertNotIn("r_score", analyzer.rfm.columns)
+        analyzer.rfm.loc[1, "customer_id"] = "c0"
+        with self.assertRaisesRegex(ValueError, "중복"):
+            analyzer.segment_customers()
+
     def test_bad_schema_and_unknown_product_fail(self) -> None:
         self.transactions = self.transactions.drop(columns=["price"])
         self._write_csv()
