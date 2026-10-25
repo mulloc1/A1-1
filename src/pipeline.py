@@ -161,8 +161,8 @@ class DataAnalyzer:
             raise ValueError("선택된 고객의 유효한 거래 기록이 없습니다.")
         missing_products = ~transactions["product_id"].isin(raw_articles["article_id"])
         if missing_products.any():
-            examples = transactions.loc[missing_products, "product_id"].drop_duplicates().head(5).tolist()
-            raise ValueError(f"상품 표에 없는 article_id가 거래에 있습니다: {examples}")
+            missing_ids = sorted(transactions.loc[missing_products, "product_id"].unique().tolist())
+            raise ValueError(f"상품 표에 없는 article_id가 거래에 있습니다: {missing_ids}")
 
         # 실제 표본 고객이 구매한 상품만 가져와 이름과 관찰 가격 피처를 붙인다.
         products = raw_articles.loc[

@@ -155,9 +155,12 @@ class PipelineTest(unittest.TestCase):
             self.analyzer().load_data(include_images=False)
         self.transactions["price"] = [0.1, 0.1, 0.2, 0.3, -1.0]
         self.transactions.loc[0, "article_id"] = "9999999999"
+        self.transactions.loc[2, "article_id"] = "8888888888"
         self._write_csv()
-        with self.assertRaisesRegex(ValueError, "9999999999"):
+        with self.assertRaises(ValueError) as error:
             self.analyzer().load_data(include_images=False)
+        self.assertIn("9999999999", str(error.exception))
+        self.assertIn("8888888888", str(error.exception))
 
     def test_invalid_date_is_counted_without_changing_reference_date(self) -> None:
         self.transactions.loc[len(self.transactions)] = [
